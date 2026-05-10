@@ -30,6 +30,22 @@ from typing import Optional
 #  Entry point
 # ════════════════════════════════════════════════════════════════════════════
 
+def _load_env_for_cli(args) -> None:
+    """Load .env file based on CLI flags."""
+    from maestro.config import load_env
+    no_env  = getattr(args, "no_env", False)
+    env_path = getattr(args, "env",    None)
+    if no_env:
+        return
+    if env_path:
+        loaded = load_env(env_path, verbose=True)
+        print(f"  Loaded {len(loaded)} variable(s) from {env_path!r}")
+    else:
+        import os; from pathlib import Path
+        if Path(".env").exists():
+            load_env(".env")
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = _build_parser()
     args   = parser.parse_args(argv)
@@ -37,6 +53,9 @@ def main(argv: Optional[list[str]] = None) -> int:
     if not hasattr(args, "func"):
         parser.print_help()
         return 0
+
+    # Auto-load .env
+    _load_env_for_cli(args)
 
     try:
         return args.func(args) or 0
@@ -72,10 +91,15 @@ def _build_parser() -> argparse.ArgumentParser:
         """),
     )
     parser.add_argument("--version", action="version", version=_version_string())
-    parser.add_argument("--debug", action="store_true", help="Show full tracebacks")
+    parser.add_argument("--debug",   action="store_true", help="Show full tracebacks")
+    parser.add_argument("--env",     default=None, metavar="FILE",
+                        help="Load environment variables from FILE (default: .env if it exists)")
+    parser.add_argument("--no-env",  action="store_true",
+                        help="Do not auto-load .env from the current directory")
 
     sub = parser.add_subparsers(title="subcommands")
     _add_info(sub)
+    _add_config(sub)
     _add_rules(sub)
     _add_batch(sub)
     _add_saga(sub)
@@ -95,6 +119,65 @@ def _version_string() -> str:
 # ════════════════════════════════════════════════════════════════════════════
 #  info
 # ════════════════════════════════════════════════════════════════════════════
+
+def _add_config(sub) -> None:
+    p = sub.add_parser("config", help="Show resolved configuration from env / .env")
+    p.add_argument("--all",    action="store_true", help="Show all fields, including defaults")
+    p.add_argument("--check",  action="store_true", help="Check that required keys are set")
+    p.set_defaults(func=_cmd_config)
+
+
+def _cmd_config(args) -> None:
+    from maestro.config import get_config
+    cfg = get_config()
+    _print_header("Maestro Configuration")
+
+    fields = {
+        "ANTHROPIC_API_KEY":         cfg.anthropic_api_key,
+        "OPENAI_API_KEY":            cfg.openai_api_key,
+        "MAESTRO_ANTHROPIC_MODEL":   cfg.anthropic_model,
+        "MAESTRO_ANTHROPIC_MAX_TOKENS": cfg.anthropic_max_tokens,
+        "MAESTRO_ANTHROPIC_TEMPERATURE": cfg.anthropic_temperature,
+        "MAESTRO_OPENAI_MODEL":      cfg.openai_model,
+        "MAESTRO_OPENAI_BASE_URL":   cfg.openai_base_url,
+        "MAESTRO_OPENAI_TEMPERATURE": cfg.openai_temperature,
+        "MAESTRO_RETRY_MAX_ATTEMPTS": cfg.retry_max_attempts,
+        "MAESTRO_RETRY_MAX_DELAY":   cfg.retry_max_delay,
+        "MAESTRO_LOG_LEVEL":         cfg.log_level,
+        "MAESTRO_BATCH_SIZE":        cfg.batch_size,
+        "MAESTRO_ERROR_THRESHOLD":   cfg.error_threshold,
+        "MAESTRO_SCHEDULER_TICK":    cfg.scheduler_tick,
+        "MAESTRO_SCHEDULER_MAX_WORKERS": cfg.scheduler_max_workers,
+        "MAESTRO_METRICS_ENABLED":   cfg.metrics_enabled,
+        "MAESTRO_PROMETHEUS_PATH":   cfg.prometheus_path,
+    }
+    secret_keys = {"ANTHROPIC_API_KEY", "OPENAI_API_KEY"}
+    missing = []
+
+    print()
+    for key, value in fields.items():
+        is_secret = key in secret_keys
+        if value is None or value == "":
+            display = "(not set)"
+            if is_secret: missing.append(key)
+        elif is_secret:
+            display = f"{'*' * 8}  (set)"
+        else:
+            display = str(value)
+        print(f"  {key:<36} {display}")
+
+    if args.check:
+        print()
+        if missing:
+            print(f"  ✗ Missing required keys: {', '.join(missing)}")
+            print("    Set them in .env or as environment variables.")
+            return 1
+        else:
+            print("  ✓ All required keys are set.")
+
+    print()
+    print("  Tip: run 'maestro --env /path/to/.env config' to load a specific file.")
+
 
 def _add_info(sub) -> None:
     p = sub.add_parser("info", help="Show SDK version, modules and capabilities")

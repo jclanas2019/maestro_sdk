@@ -25,6 +25,10 @@ dependencies = []
 
 [project.optional-dependencies]
 yaml  = ["PyYAML>=6.0"]
+agents     = ["langgraph>=0.2", "langchain-core>=0.3", "langchain-anthropic>=0.3"]
+anthropic  = ["anthropic>=0.40"]
+openai     = ["openai>=1.0"]
+llm        = ["anthropic>=0.40", "openai>=1.0"]
 dev   = ["pytest>=8.0", "pytest-cov>=4.0", "PyYAML>=6.0"]
 
 [project.urls]

@@ -211,3 +211,11 @@ from maestro.schedule import (
     Trigger, CronTrigger, IntervalTrigger, OnceTrigger, ImmediateTrigger,
     TaskState, TaskRun, ScheduledTask, ScheduleListener, Scheduler,
 )
+
+# ── config ────────────────────────────────────────────────────────────────── #
+from maestro.config import (
+    load_env, get_config, MaestroConfig,
+    global_observer, reset_global_observer,
+    configure_logging,
+    make_anthropic_from_config, make_openai_from_config,
+)
