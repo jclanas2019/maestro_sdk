@@ -296,6 +296,7 @@ class ScheduledTask:
         self._scheduler.remove(self.name)
 
     def _refresh_next_fire(self) -> None:
+        """Recalculate next_fire. Must be called while holding the Scheduler lock."""
         now = datetime.datetime.now()
         self.next_fire = self.trigger.next_fire_time(self.last_fire, now)
 

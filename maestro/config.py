@@ -421,29 +421,27 @@ def make_anthropic_from_config(**overrides):
     Create an :class:`~maestro.agents.AnthropicAdapter` using values from
     ``get_config()`` as defaults, with any keyword arguments overriding them.
 
-    Equivalent to::
-
-        cfg = get_config()
-        make_anthropic(
-            model       = cfg.anthropic_model,
-            api_key     = cfg.anthropic_api_key,
-            max_tokens  = cfg.anthropic_max_tokens,
-            temperature = cfg.anthropic_temperature,
-        )
+    Raises :exc:`ValueError` with a clear message if ``ANTHROPIC_API_KEY``
+    is not set and not provided as an override.
 
     Example::
 
         import maestro
         maestro.load_env()
         llm = maestro.make_anthropic_from_config()
-        # same as:
-        llm = maestro.make_anthropic()   # also config-aware after load_env()
     """
     from maestro.agents._providers import AnthropicAdapter
-    cfg = get_config()
+    cfg    = get_config()
+    api_key = overrides.pop("api_key", None) or cfg.anthropic_api_key
+    if not api_key:
+        raise ValueError(
+            "Anthropic API key not set. "
+            "Either set ANTHROPIC_API_KEY in your .env file / environment, "
+            "or pass api_key= explicitly to make_anthropic_from_config()."
+        )
     kwargs = {
         "model":       cfg.anthropic_model,
-        "api_key":     cfg.anthropic_api_key,
+        "api_key":     api_key,
         "max_tokens":  cfg.anthropic_max_tokens,
         "temperature": cfg.anthropic_temperature,
     }
@@ -456,20 +454,32 @@ def make_openai_from_config(**overrides):
     Create an :class:`~maestro.agents.OpenAIAdapter` using values from
     ``get_config()`` as defaults.
 
+    Raises :exc:`ValueError` if ``OPENAI_API_KEY`` is not set and the
+    ``base_url`` is also not overridden (base_url may not need a key for
+    local endpoints like Ollama).
+
     Example::
 
         import maestro
         maestro.load_env()
         llm = maestro.make_openai_from_config()
-        # override the model only:
         llm = maestro.make_openai_from_config(model="gpt-4o")
     """
     from maestro.agents._providers import OpenAIAdapter
-    cfg = get_config()
+    cfg     = get_config()
+    api_key  = overrides.pop("api_key",  None) or cfg.openai_api_key
+    base_url = overrides.pop("base_url", None) or cfg.openai_base_url
+    if not api_key and not base_url:
+        raise ValueError(
+            "OpenAI API key not set. "
+            "Either set OPENAI_API_KEY in your .env file / environment, "
+            "pass api_key= explicitly, or set MAESTRO_OPENAI_BASE_URL for "
+            "a local endpoint (e.g. Ollama) that does not require a key."
+        )
     kwargs = {
         "model":       cfg.openai_model,
-        "api_key":     cfg.openai_api_key,
-        "base_url":    cfg.openai_base_url,
+        "api_key":     api_key,
+        "base_url":    base_url,
         "temperature": cfg.openai_temperature,
     }
     kwargs.update(overrides)

@@ -11,6 +11,8 @@ import threading
 import time
 
 import pytest
+pytestmark = pytest.mark.core
+
 
 from maestro.flows import (
     WorkContext, WorkStatus, DefaultWorkReport,

@@ -62,6 +62,29 @@ class WorkContext:
         """Remove *key* (no-op if absent)."""
         self._data.pop(key, None)
 
+    def copy(self) -> "WorkContext":
+        """
+        Return a new ``WorkContext`` with a shallow copy of all current entries.
+
+        Used by ``ParallelFlow`` and ``GraphFlow`` to give each concurrent
+        work unit an isolated snapshot so they cannot race on shared state.
+        """
+        return WorkContext(**self._data)
+
+    def merge(self, other: "WorkContext") -> "WorkContext":
+        """
+        Merge all entries from *other* into this context.
+
+        *other*'s values overwrite any existing entries with the same key.
+        Returns ``self`` for method-chaining.
+
+        A snapshot of *other* is taken first so concurrent modifications
+        to *other* cannot cause a ``RuntimeError`` during iteration.
+        """
+        snapshot = dict(other._data)   # atomic snapshot — safe under CPython GIL
+        self._data.update(snapshot)
+        return self
+
     def contains(self, key: str) -> bool:
         return key in self._data
 

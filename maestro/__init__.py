@@ -54,6 +54,7 @@ __description__ = "The simple, unified automation SDK for Python"
 
 # ── rules ────────────────────────────────────────────────────────────────── #
 from maestro.rules import (
+    MaestroSecurityWarning,
     Facts, Rule, BasicRule, AnnotatedRule, wrap_rule,
     rule, condition, action, Rules, RuleBuilder,
     RuleListener, RulesEngineListener, RulesEngineParameters,

@@ -28,6 +28,37 @@ from typing import Any, Callable, Iterator, Optional
 
 logger = logging.getLogger(__name__)
 
+
+class MaestroSecurityWarning(UserWarning):
+    """Emitted when a Maestro component is configured in an unsafe/insecure mode."""
+
+
+# ── Sandboxed builtins for ExpressionRule ────────────────────────────────── #
+# eval/exec with full __builtins__ allows __import__, open, and arbitrary code.
+# SAFE_BUILTINS restricts expressions to a safe computational subset.
+_SAFE_BUILTINS: dict = {
+    "True": True, "False": False, "None": None,
+    # Type constructors
+    "int": int, "float": float, "str": str, "bool": bool,
+    "list": list, "tuple": tuple, "dict": dict, "set": set,
+    "frozenset": frozenset, "bytes": bytes,
+    # Math / comparison
+    "abs": abs, "round": round, "min": min, "max": max,
+    "sum": sum, "pow": pow, "divmod": divmod,
+    # Iterables
+    "len": len, "any": any, "all": all,
+    "sorted": sorted, "reversed": reversed,
+    "enumerate": enumerate, "zip": zip, "range": range,
+    "map": map, "filter": filter,
+    # Type-checking
+    "isinstance": isinstance, "issubclass": issubclass,
+    "hasattr": hasattr, "getattr": getattr, "callable": callable,
+    "type": type, "id": id,
+    # String / repr
+    "repr": repr, "str": str, "format": format,
+    "chr": chr, "ord": ord, "hex": hex, "oct": oct, "bin": bin,
+}  # print() intentionally excluded — side effects in sandbox
+
 # ── Constants ────────────────────────────────────────────────────────────── #
 DEFAULT_PRIORITY    = 0
 DEFAULT_DESCRIPTION = "no description"
@@ -410,45 +441,112 @@ class ActivationRuleGroup(CompositeRule):
 import textwrap as _tw
 
 
-def _make_cond(expr: str):
+def _make_cond(expr: str, allow_unsafe: bool = False):
     compiled = compile(expr, "<condition>", "eval")
+    if allow_unsafe:
+        _globals: dict = {"__builtins__": __builtins__}
+    else:
+        # Empty __builtins__ blocks __import__, open, exec, eval, compile etc.
+        # Allowed names are merged directly into the globals namespace.
+        _globals = {"__builtins__": {}, **_SAFE_BUILTINS}
     def _cond(facts: Facts) -> bool:
-        return bool(eval(compiled, {"__builtins__": __builtins__}, facts.as_map()))
+        ns = {**_globals, **facts.as_map()}
+        return bool(eval(compiled, ns))
     return _cond
 
 
-def _make_action(stmt: str):
+def _make_action(stmt: str, allow_unsafe: bool = False):
     compiled = compile(_tw.dedent(stmt), "<action>", "exec")
+    if allow_unsafe:
+        _base: dict = {"__builtins__": __builtins__}
+    else:
+        _base = {"__builtins__": {}, **_SAFE_BUILTINS}
     def _act(facts: Facts) -> None:
-        ns = facts.as_map()
-        exec(compiled, {"__builtins__": __builtins__}, ns)
-        for k in list(ns):
-            if k in facts: facts.put(k, ns[k])
+        ns = {**_base, **facts.as_map()}
+        try:
+            exec(compiled, ns)
+        except NameError as exc:
+            if not allow_unsafe:
+                # Blocked by sandbox (e.g. __import__ not defined) — log and skip.
+                # Non-sandbox NameError in allow_unsafe=True mode should propagate.
+                logger.warning("ExpressionRule sandbox blocked action: %s", exc)
+                return
+            raise  # allow_unsafe=True: let real NameError propagate
+        # Sync back any new/modified fact keys (skip built-ins and dunders)
+        for k, v in ns.items():
+            if k not in _SAFE_BUILTINS and not k.startswith("__"):
+                facts.put(k, v)
     return _act
 
 
 class ExpressionRule(BasicRule):
-    """Rule whose condition and actions are Python expression strings."""
+    """
+    Rule whose condition and actions are Python expression strings.
+
+    Security
+    --------
+    By default (``allow_unsafe=False``) expressions are evaluated in a
+    restricted sandbox that blocks ``__import__``, ``open``, ``exec``,
+    and other dangerous builtins.  Only the safe computational subset
+    defined in ``_SAFE_BUILTINS`` is available.
+
+    Set ``allow_unsafe=True`` **only** when the expression source is fully
+    trusted (e.g. written by your own team, not user-supplied).
+    A :class:`SecurityWarning` is emitted every time an unsafe rule is built.
+
+    Example::
+
+        # Safe (default) — blocks __import__ and other dangerous calls
+        rule = ExpressionRule("ok", "total > 100", ["discount = 0.10"])
+
+        # Unsafe — only for fully-trusted, developer-authored expressions
+        rule = ExpressionRule("admin", "os.path.exists(path)", [],
+                              allow_unsafe=True)  # emits SecurityWarning
+    """
     def __init__(self, name: str, condition: str, actions: list[str],
-                 description: str = DEFAULT_DESCRIPTION, priority: int = DEFAULT_PRIORITY):
+                 description: str = DEFAULT_DESCRIPTION, priority: int = DEFAULT_PRIORITY,
+                 allow_unsafe: bool = False):
+        if allow_unsafe:
+            import warnings
+            warnings.warn(
+                f"ExpressionRule {name!r}: allow_unsafe=True grants full Python "
+                "builtins inside eval/exec.  Only use with developer-authored, "
+                "trusted expressions — never with user-supplied input.",
+                MaestroSecurityWarning,
+                stacklevel=2,
+            )
         super().__init__(name, description, priority,
-                         _make_cond(condition), [_make_action(a) for a in actions])
+                         _make_cond(condition, allow_unsafe),
+                         [_make_action(a, allow_unsafe) for a in actions])
         self._cond_expr    = condition
         self._action_exprs = actions
+        self._allow_unsafe = allow_unsafe
 
 
 class YamlRuleFactory:
     """Load ``ExpressionRule`` objects from YAML files or strings. Requires PyYAML."""
-    def __init__(self):
+
+
+    def __init__(self, allow_unsafe: bool = False):
         try: import yaml  # noqa
         except ImportError as e: raise ImportError("pip install maestro-sdk[yaml]") from e
+        self._allow_unsafe = allow_unsafe
+        if allow_unsafe:
+            import warnings
+            warnings.warn(
+                "YamlRuleFactory(allow_unsafe=True): YAML-defined rules will run "
+                "with full Python builtins.  Only use with trusted YAML sources.",
+                MaestroSecurityWarning,
+                stacklevel=2,
+            )
 
     def _build(self, d: dict) -> ExpressionRule:
         actions = d.get("actions") or []
         if isinstance(actions, str): actions = [actions]
         return ExpressionRule(d.get("name","rule"), d.get("condition","True"), actions,
                               d.get("description", DEFAULT_DESCRIPTION),
-                              int(d.get("priority", DEFAULT_PRIORITY)))
+                              int(d.get("priority", DEFAULT_PRIORITY)),
+                              allow_unsafe=self._allow_unsafe)
 
     def _load(self, path):
         import yaml

@@ -5,6 +5,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dataclasses import dataclass
 import pytest
 import maestro
+pytestmark = pytest.mark.core
+
 from maestro.validate import (
     ValidationError, ValidationResult, SchemaViolation,
     Required, Range, Length, Pattern, OneOf, Custom, NotEmpty,

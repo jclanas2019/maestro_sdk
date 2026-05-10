@@ -7,6 +7,8 @@ import sys, os
 
 
 import pytest
+pytestmark = pytest.mark.core
+
 from maestro.rules import (
     Facts, Rules, RuleBuilder, DefaultRulesEngine,
     InferenceRulesEngine, FirstApplicableRulesEngine,

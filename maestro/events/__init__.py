@@ -136,9 +136,11 @@ class EventBus:
         for subscriber in targets + wildcards:
             try:
                 subscriber.on_message(msg)
-                with self._lock: self._delivered += 1
             except Exception as exc:
+                # Isolate subscriber failures: log and continue to next subscriber
                 logger.error("Subscriber error on topic %r: %s", topic, exc)
+            else:
+                with self._lock: self._delivered += 1
 
         logger.debug("Published to %r: %s", topic, msg.id)
         return msg

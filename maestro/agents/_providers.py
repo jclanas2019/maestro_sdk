@@ -626,26 +626,49 @@ class OpenAIAdapter(LLMAdapter):
         tools:    Optional[list] = None,
         on_text:  Optional[Callable[[str], None]] = None,
     ) -> LLMResponse:
-        """Stream a response, calling ``on_text`` for each text chunk."""
+        """
+        Stream a response, calling ``on_text`` for each text chunk.
+
+        Makes a single API call — usage stats are accumulated from stream events.
+        """
         api_messages = self._build_messages(messages)
         kwargs: dict = {
             "model":    self._model,
             "messages": api_messages,
             "stream":   True,
+            "stream_options": {"include_usage": True},
         }
         if tools: kwargs["tools"] = [_maestro_tool_to_openai(t) for t in tools]
 
-        full_text: list[str] = []
-        with self._client.chat.completions.create(**kwargs) as stream:
-            for chunk in stream:
-                delta = chunk.choices[0].delta if chunk.choices else None
-                if delta and delta.content:
-                    full_text.append(delta.content)
-                    if on_text: on_text(delta.content)
+        full_text:  list[str]    = []
+        tool_calls: list[ToolCall] = []
+        usage       = TokenUsage()
+        finish_reason = "stop"
 
-        # Re-run without streaming to get full response with usage
-        kwargs.pop("stream")
-        return self.chat(messages, tools)
+        for chunk in self._client.chat.completions.create(**kwargs):
+            if not chunk.choices and hasattr(chunk, "usage") and chunk.usage:
+                # Final usage chunk when stream_options.include_usage=True
+                usage = TokenUsage(
+                    input_tokens  = chunk.usage.prompt_tokens,
+                    output_tokens = chunk.usage.completion_tokens,
+                )
+                continue
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                full_text.append(delta.content)
+                if on_text: on_text(delta.content)
+            if chunk.choices[0].finish_reason:
+                finish_reason = chunk.choices[0].finish_reason
+
+        finish_map = {"stop": "end_turn", "tool_calls": "tool_use", "length": "length"}
+        return LLMResponse(
+            content     = "".join(full_text),
+            tool_calls  = tool_calls,
+            stop_reason = finish_map.get(finish_reason, finish_reason),
+            usage       = usage,
+        )
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -765,7 +788,8 @@ def make_anthropic(
     try:
         from maestro.config import get_config
         cfg = get_config()
-    except Exception:
+    except Exception as _exc:
+        logger.debug("config unavailable, using defaults: %s", _exc)
         cfg = None
 
     resolved_model       = model       or (cfg.anthropic_model       if cfg else AnthropicModels.DEFAULT)
@@ -812,7 +836,8 @@ def make_openai(
     try:
         from maestro.config import get_config
         cfg = get_config()
-    except Exception:
+    except Exception as _exc:
+        logger.debug("config unavailable, using defaults: %s", _exc)
         cfg = None
 
     resolved_model       = model    or (cfg.openai_model       if cfg else OpenAIModels.DEFAULT)

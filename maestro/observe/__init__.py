@@ -46,6 +46,9 @@ logger = logging.getLogger(__name__)
 #  Metric primitives
 # ════════════════════════════════════════════════════════════════════════════
 
+_VALID_METRIC_KINDS = frozenset({"counter", "gauge", "histogram"})
+
+
 @dataclass
 class MetricEvent:
     """A single observation emitted by any Maestro component."""
@@ -55,6 +58,13 @@ class MetricEvent:
     labels:    dict[str, str] = field(default_factory=dict)
     timestamp: float          = field(default_factory=time.monotonic)
     kind:      str            = "counter"  # "counter" | "gauge" | "histogram"
+
+    def __post_init__(self) -> None:
+        if self.kind not in _VALID_METRIC_KINDS:
+            raise ValueError(
+                f"MetricEvent kind={self.kind!r} is invalid — "
+                f"valid values: {sorted(_VALID_METRIC_KINDS)}"
+            )
 
     @property
     def label_str(self) -> str:
@@ -174,7 +184,8 @@ class CompositeObserver(Observer):
     def flush(self) -> None:
         for obs in self._observers:
             try: obs.flush()
-            except Exception: pass
+            except Exception as _exc:
+                logger.debug("observer callback raised: %s", _exc)
 
 
 class InMemoryObserver(Observer):

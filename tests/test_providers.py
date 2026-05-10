@@ -10,6 +10,8 @@ import pytest
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import maestro
+pytestmark = pytest.mark.llm
+
 from maestro.agents import (
     AnthropicAdapter, OpenAIAdapter, AnthropicModels, OpenAIModels,
     Message, LLMResponse, ToolCall, TokenUsage,

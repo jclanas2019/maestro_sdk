@@ -4,6 +4,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 import maestro
+pytestmark = pytest.mark.core
+
 from maestro.observe import (
     MetricEvent, InMemoryObserver, LoggingObserver, CompositeObserver,
     MaestroObserver, timed,

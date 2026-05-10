@@ -229,21 +229,27 @@ class GraphFlow(Work):
         futures:   dict[concurrent.futures.Future, str] = {}
 
         def submit_ready() -> None:
+            # Called under lock — reads in_degree, completed, futures consistently
+            pending_names = {futures[f] for f in futures}
             for name, deg in list(in_degree.items()):
-                if deg == 0 and name not in completed and name not in [futures[f] for f in futures]:
+                if deg == 0 and name not in completed and name not in pending_names:
                     fut = executor.submit(_execute_node, name)
                     futures[fut] = name
 
         def _execute_node(name: str) -> NodeReport:
             node = self._nodes[name]
+            # Each node gets its own context copy so parallel nodes
+            # cannot race on shared state.  Writes are merged back under
+            # the lock after the node completes.
+            ctx_copy = work_context.copy()
             t0   = time.monotonic()
             try:
-                report = node.work.execute(work_context)
+                report = node.work.execute(ctx_copy)
                 status = report.status
                 error  = report.error
             except Exception as exc:
                 status = WorkStatus.FAILED
-                report = DefaultWorkReport(WorkStatus.FAILED, work_context, error=exc)
+                report = DefaultWorkReport(WorkStatus.FAILED, ctx_copy, error=exc)
                 error  = exc
                 logger.error("GraphFlow: node %r raised: %s", name, exc)
 
@@ -254,11 +260,15 @@ class GraphFlow(Work):
                 nr = NodeReport(name=name, status=status, duration=duration,
                                 completion_order=completion_counter,
                                 work_report=report, error=error)
+                # Merge node's context writes back into the shared context
+                if status == WorkStatus.COMPLETED:
+                    work_context.merge(ctx_copy)
             logger.debug("Node %r → %s (%.3fs)", name, status.value, duration)
             return nr
 
-        # Initial submission
-        submit_ready()
+        # Initial submission (single-threaded at this point, lock for consistency)
+        with lock:
+            submit_ready()
 
         while futures:
             done, _ = concurrent.futures.wait(
@@ -294,13 +304,13 @@ class GraphFlow(Work):
                         futures.clear()
                         break
                 else:
-                    # Decrement dependents
+                    # Decrement dependents and submit newly-ready nodes — all under lock
                     with lock:
                         for other_name, other_node in self._nodes.items():
                             if name in other_node.depends_on and other_name in in_degree:
                                 in_degree[other_name] -= 1
-
-                    if not aborted: submit_ready()
+                        if not aborted:
+                            submit_ready()
 
             if aborted: break
 

@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 import maestro
+pytestmark = pytest.mark.core
+
 from maestro.config import (
     load_env, get_config, MaestroConfig,
     global_observer, reset_global_observer, configure_logging,
@@ -347,7 +349,8 @@ class TestGlobalObserver:
 class TestConfigAwareFactories:
     def test_make_anthropic_from_config_uses_env_model(self):
         with patch.dict(os.environ, {
-            "MAESTRO_ANTHROPIC_MODEL":    "claude-opus-4-6",
+            "ANTHROPIC_API_KEY":           "sk-test-dummy",
+            "MAESTRO_ANTHROPIC_MODEL":     "claude-opus-4-6",
             "MAESTRO_ANTHROPIC_MAX_TOKENS": "8192",
         }), patch("anthropic.Anthropic"):
             adapter = make_anthropic_from_config()
@@ -363,8 +366,10 @@ class TestConfigAwareFactories:
             assert adapter.model == "gpt-4o"
 
     def test_make_anthropic_from_config_overrides_work(self):
-        with patch.dict(os.environ, {"MAESTRO_ANTHROPIC_MODEL": "claude-haiku-4-5-20251001"}), \
-             patch("anthropic.Anthropic"):
+        with patch.dict(os.environ, {
+            "ANTHROPIC_API_KEY":       "sk-test-dummy",
+            "MAESTRO_ANTHROPIC_MODEL": "claude-haiku-4-5-20251001",
+        }), patch("anthropic.Anthropic"):
             adapter = make_anthropic_from_config(model="claude-opus-4-6")
             assert adapter.model == "claude-opus-4-6"
 

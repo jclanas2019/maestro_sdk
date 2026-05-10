@@ -484,7 +484,8 @@ class AsyncJob:
 
         for l in self._jl:
             try: l.before_job_start(self._params)
-            except Exception: pass
+            except Exception as _exc:
+                logger.debug("async lifecycle error (ignored): %s", _exc)
 
         try:
             status = JobStatus.RUNNING
@@ -559,7 +560,8 @@ class AsyncJob:
                            status=status, last_error=last_err)
         for l in self._jl:
             try: l.after_job_end(report)
-            except Exception: pass
+            except Exception as _exc:
+                logger.debug("async lifecycle error (ignored): %s", _exc)
         return report
 
     async def _open(self, obj) -> None:

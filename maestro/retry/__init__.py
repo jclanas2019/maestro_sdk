@@ -281,7 +281,8 @@ def execute_with_retry(fn: Callable[[], Any], policy: RetryPolicy) -> Any:
             )
             if policy.on_retry:
                 try: policy.on_retry(attempt, delay, exc)
-                except Exception: pass
+                except Exception as _exc:
+                    logger.debug("retry on_retry callback raised: %s", _exc)
 
             if delay > 0:
                 time.sleep(delay)

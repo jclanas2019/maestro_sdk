@@ -4,6 +4,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 import maestro
+pytestmark = pytest.mark.core
+
 from maestro.retry import (
     NoBackoff, ConstantBackoff, LinearBackoff, ExponentialBackoff, JitteredBackoff,
     CircuitBreaker, CircuitState, CircuitOpenError,

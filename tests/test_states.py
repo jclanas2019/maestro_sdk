@@ -7,6 +7,8 @@ import sys, os
 
 
 import pytest
+pytestmark = pytest.mark.core
+
 
 from maestro.states import (
     State, Event, AbstractEvent,

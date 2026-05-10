@@ -172,13 +172,22 @@ class FSMStatusTool(BaseTool):
 
     def _run(self, facts: dict[str, Any]) -> str:
         current = self.fsm.current_state.name
-        available = [name for name, ecls in self.event_map.items()
-                     if any(t.source_state == self.fsm.current_state
-                            and isinstance(ecls(), type(ecls()))
-                            for t in getattr(self.fsm, "_transitions", {}).values())]
+        # Determine which registered events can fire from the current state.
+        # Use the public .transitions property (list of Transition objects).
+        transitions = getattr(self.fsm, "transitions", None) or []
+        if isinstance(transitions, dict):
+            transitions = list(transitions.values())
+        available = []
+        for event_name, event_cls in self.event_map.items():
+            for t in transitions:
+                if (getattr(t, "source_state", None) == self.fsm.current_state
+                        and getattr(t, "event_type", None) is event_cls):
+                    available.append(event_name)
+                    break
         return json.dumps({
-            "current_state":      current,
-            "available_events":   list(self.event_map.keys()),
+            "current_state":    current,
+            "available_events": available,
+            "all_events":       list(self.event_map.keys()),
         })
 
 

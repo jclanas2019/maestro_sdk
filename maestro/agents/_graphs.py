@@ -411,7 +411,8 @@ class MultiAgentOrchestratorGraph:
             try:
                 parsed = _json.loads(content)
                 next_  = parsed.get("next", "FINISH")
-            except Exception:
+            except Exception as _exc:
+                logger.debug("supervisor routing parse failed: %s — defaulting to FINISH", _exc)
                 next_  = "FINISH"
             logger.info("supervisor: iteration=%d routing → %s", iteration, next_)
             return {

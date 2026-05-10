@@ -41,6 +41,13 @@ include = ["maestro*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "-v"
+markers = [
+    "core: core SDK tests — no optional dependencies required",
+    "yaml: requires PyYAML (pip install 'maestro-sdk[yaml]')",
+    "llm: requires anthropic and/or openai (pip install 'maestro-sdk[llm]')",
+    "agents: requires langgraph + langchain-core (pip install 'maestro-sdk[agents]')",
+    "slow: timing-dependent tests (scheduler, sleep-based assertions)",
+]
 
 [project.scripts]
 maestro = "maestro.cli:main"

@@ -435,7 +435,7 @@ class SchemaFilter(RecordFilter):
         try:
             result = self._schema.validate(record.payload)
             return result.ok
-        except Exception:
+        except Exception as _exc:
             return False
 
 

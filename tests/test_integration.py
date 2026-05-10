@@ -13,6 +13,8 @@ from dataclasses import dataclass
 import pytest
 
 import maestro
+pytestmark = pytest.mark.core
+
 from maestro.integration import (
     RuleSetWork, BatchWork, FSMGuardWork, FSMTransitionWork,
     RuleBasedFilter, RuleBasedProcessor,
